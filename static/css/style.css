@@ -1,0 +1,86 @@
+/* 1. ANIMACIÓN DE ENTRADA (El movimiento suave) */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translate3d(0, 20px, 0);
+    }
+    to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0);
+    }
+}
+
+/* Esta clase se la pondremos a todo lo que queramos animar */
+.animate-enter {
+    animation: fadeInUp 0.6s ease-out forwards;
+}
+
+/* 2. ESTILO CORPORATIVO */
+body {
+    background-color: #f4f6f9; /* Gris muy claro, mejor que blanco puro */
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Barra de Navegación Negra */
+.navbar-corporate {
+    background-color: #000000 !important; /* Negro puro */
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+
+.navbar-brand {
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-size: 0.9rem;
+}
+
+/* Tarjetas (Contenedores Blancos) */
+.card {
+    border: none; /* Sin bordes feos */
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05); /* Sombra sutil */
+    background-color: #ffffff;
+    transition: transform 0.2s;
+}
+
+/* Efecto al pasar el mouse por una tarjeta */
+.card:hover {
+    box-shadow: 0 10px 15px rgba(0,0,0,0.1);
+}
+
+/* Botones con estilo */
+.btn-corporate {
+    background-color: #000000;
+    color: white;
+    border-radius: 5px;
+    padding: 10px 20px;
+}
+.btn-corporate:hover {
+    background-color: #333333; /* Gris oscuro al pasar mouse */
+    color: white;
+}
+
+
+/* --- NUEVA ANIMACIÓN PARA EL LOGO --- */
+@keyframes slowFadeIn {
+    from {
+        opacity: 0; /* Empieza invisible */
+        transform: scale(0.95); /* Un pelín más pequeño al inicio */
+    }
+    to {
+        opacity: 1; /* Termina visible */
+        transform: scale(1); /* Tamaño normal */
+    }
+}
+
+/* Clase para aplicar la animación */
+.logo-appear {
+    /* 2.5s es el tiempo que tarda. Cámbialo si lo quieres más rápido o lento */
+    animation: slowFadeIn 2.5s ease-in-out forwards;
+}
+
+/* Ajuste para el logo del Navbar */
+.navbar-brand img {
+    max-height: 50px; /* Altura máxima para que no deforme la barra */
+    width: auto;      /* El ancho se ajusta solo */
+}

@@ -1,0 +1,42 @@
+
+
+# --- Python ---
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+
+# --- Entornos Virtuales (¡Muy Importante!) ---
+# Ignoramos esto porque Docker instalará las dependencias limpias
+env/
+venv/
+.venv/
+
+# --- Git ---
+.git/
+.gitignore
+
+# --- Archivos de Sistema/IDE ---
+.DS_Store
+.idea/
+.vscode/
+
+# --- Django ---
+# Si usas SQLite local, no la queremos en el contenedor
+*.sqlite3
+db.sqlite3
+
+# Archivos estáticos y media (se gestionan aparte o en S3)
+media/
+staticfiles/
+
+# --- Logs ---
+*.log
+
+# --- Docker ---
+# Ignorar archivos de docker para que no se copien a sí mismos recursivamente (opcional)
+Dockerfile
+docker-compose.yml
+.dockerignore

@@ -1,0 +1,53 @@
+services:
+  # 1. Base de Datos (PostgreSQL) - ¡LA SOLUCIÓN!
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=retail_db
+      - POSTGRES_USER=danilo
+      - POSTGRES_PASSWORD=jaming21
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # 2. Redis
+  redis:
+    image: redis:6-alpine
+    ports:
+      - "6379:6379"
+
+  # 3. Aplicación Web
+  web:
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+      - db  # <--- Ahora depende de la base de datos real
+    environment:
+      - DB_HOST=db
+      - DB_NAME=retail_db
+      - DB_USER=danilo
+      - DB_PASS=jaming21
+
+  # 4. Celery Worker
+  celery:
+    build: .
+    command: celery -A retail_dam worker -l info
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+      - db
+    environment:
+      - DB_HOST=db
+      - DB_NAME=retail_db
+      - DB_USER=danilo
+      - DB_PASS=jaming21
+
+volumes:
+  postgres_data:

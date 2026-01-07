@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12 text-center mb-5">
+        <h2 class="fw-light">Buscador Inteligente</h2>
+        <p class="text-muted">Encuentra documentos por contenido visual o texto escaneado</p>
+    </div>
+</div>
+
+<div class="row justify-content-center mb-5">
+    <div class="col-md-8">
+        <form method="GET" action="" class="card p-2 shadow-sm border-0">
+            <div class="input-group input-group-lg">
+                <span class="input-group-text bg-white border-0 text-muted">
+                    <i class="fas fa-search"></i>
+                </span>
+                <input type="text" 
+                       name="q" 
+                       class="form-control border-0" 
+                       placeholder="Ej: 'Factura', 'Playa', 'Perro'..."
+                       value="{{ query|default:'' }}">
+                
+                <button class="btn btn-dark px-4 rounded" type="submit">Buscar</button>
+                
+                {% if query %}
+                    <a href="{% url 'lista_documentos' %}" class="btn btn-outline-secondary ms-2 rounded">Limpiar</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row">
+    {% for doc in documentos %}
+    <div class="col-md-4 mb-4">
+        <div class="card h-100 hover-shadow">
+            
+            <div style="height: 200px; overflow: hidden; background-color: #f8f9fa;" class="d-flex align-items-center justify-content-center border-bottom">
+                {% if doc.archivo %}
+                    <a href="{{ doc.archivo.url }}" target="_blank">
+                        <img src="{{ doc.archivo.url }}" style="width: 100%; height: 200px; object-fit: cover;" alt="Doc">
+                    </a>
+                {% else %}
+                    <i class="fas fa-file-alt fa-3x text-muted"></i>
+                {% endif %}
+            </div>
+
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="card-title mb-0 text-truncate" style="max-width: 70%;" title="{{ doc.titulo }}">
+                        {{ doc.titulo|default:"Sin Título" }}
+                    </h6>
+                    {% if doc.estado == 'completado' %}
+                        <span class="badge bg-success rounded-pill"><i class="fas fa-check"></i></span>
+                    {% elif doc.estado == 'procesando' %}
+                        <span class="badge bg-warning text-dark rounded-pill"><i class="fas fa-spinner fa-spin"></i></span>
+                    {% else %}
+                        <span class="badge bg-secondary rounded-pill">?</span>
+                    {% endif %}
+                </div>
+
+                <div class="mb-3">
+                    <small class="text-muted fw-bold d-block mb-1">IA Detectó:</small>
+                    {% for tag in doc.tags_ia|slice:":5" %} 
+                        <span class="badge bg-light text-dark border mb-1">{{ tag }}</span>
+                    {% empty %}
+                        <span class="small text-muted fst-italic">Procesando...</span>
+                    {% endfor %}
+                </div>
+
+                <div>
+                    <small class="text-muted fw-bold d-block mb-1">Texto:</small>
+                    <div class="bg-light p-2 rounded small text-muted" style="height: 60px; overflow: hidden;">
+                        {{ doc.texto_detectado|default:"Sin texto legible" }}
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-footer bg-white border-top-0 pt-0 text-end">
+                <small class="text-muted me-auto float-start mt-2">{{ doc.fecha|date:"d M, Y" }}</small>
+                <a href="{{ doc.archivo.url }}" target="_blank" class="btn btn-sm btn-outline-dark">Ver Original</a>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+        <div class="col-12 text-center py-5 opacity-50">
+            <i class="fas fa-box-open fa-3x mb-3"></i>
+            <p>No se encontraron documentos.</p>
+        </div>
+    {% endfor %}
+</div>
+{% endblock %}
