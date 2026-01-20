@@ -30,8 +30,10 @@ urlpatterns = [
   # ruta principal: si entran a la raiz, van a subir archivos
     path('', subir_archivo_view, name='subir_archivo'),
     path('eliminar/<int:documento_id>/', views.eliminar_documento, name='eliminar_documento'),
-
     path('buscar/', views.lista_documentos, name='lista_documentos'),
+    path('api/chat/', views.chat_api, name='chat_api'),
+    path('ver/<int:documento_id>/', views.visualizar_documento, name='visualizar_documento'),
+    path('descargar/<int:documento_id>/', views.descargar_documento, name='descargar_documento'),    
     
 ]
 

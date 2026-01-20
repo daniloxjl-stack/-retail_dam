@@ -1,0 +1,21 @@
+# --- Seguridad (CRÍTICO) ---
+.env
+.env.*
+secrets.json
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- Django ---
+db.sqlite3
+media/
+staticfiles/
+*.log
+
+# --- Sistema / IDE ---
+.DS_Store
+.vscode/
+.idea/

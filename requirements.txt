@@ -14,3 +14,7 @@ urllib3==1.26.20
 redis
 celery
 psycopg2-binary
+pgvector
+channels==4.0.0
+daphne==4.0.0
+channels_redis==4.1.0

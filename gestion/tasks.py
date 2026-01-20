@@ -1,125 +1,156 @@
 from celery import shared_task
 from django.conf import settings
 from .models import Documento
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 import boto3
-import os
+import time
+import random
+import zipfile
+import xml.etree.ElementTree as ET
+import io
+
+# --- CONFIGURACIÓN ---
+MODO_LABORATORIO_BEDROCK = True 
 
 @shared_task
-def procesar_imagen_ia(documento_id):
+def procesar_archivo_ia(documento_id):
+    print(f"--- [CELERY] Iniciando tarea para Documento ID: {documento_id} ---")
+    
     try:
-        print(f"--- INICIO TAREA IA para documento ID: {documento_id} ---")
-        
-        # 1. Buscar el archivo en la DB
+        # 1. Buscar documento
         doc = Documento.objects.get(id=documento_id)
-        
-        # Actualizamos estado
         doc.estado = 'procesando'
         doc.save()
 
-        # Obtenemos datos de S3
+        # 2. Configurar S3
         bucket_name = settings.AWS_STORAGE_BUCKET_NAME
         file_name = doc.archivo.name
-        
-        # DEBUG: Imprimir esto es vital para ver qué está pasando
-        print(f"--- DEBUG S3: Bucket='{bucket_name}' | Key='{file_name}' ---")
+        # Truco: sacamos la extensión en minúsculas
+        ext = file_name.split('.')[-1].lower()
 
-        # Inicializamos clientes
+        # Clientes AWS
+        client_s3 = boto3.client('s3', region_name='us-east-1')
         client_rek = boto3.client('rekognition', region_name='us-east-1')
-        client_text = boto3.client('textract', region_name='us-east-1')
+        client_textract = boto3.client('textract', region_name='us-east-1')
         
-        # ### NUEVO 1: Cliente de Translate ###
-        client_trans = boto3.client('translate', region_name='us-east-1')
-
-        mis_tags = []
+        tags_finales = []
         texto_final = ""
-        errores = []
+        embedding_final = None 
 
-        # --- PARTE 1: AWS REKOGNITION (Solo JPG/PNG) ---
-        # Validamos extensión
-        ext = os.path.splitext(file_name)[1].lower()
+        # ==============================================================================
+        # PASO A: EXTRACCIÓN DE TEXTO (LÓGICA MULTI-FORMATO)
+        # ==============================================================================
+        print(f"--> [IA] Iniciando extracción para formato: {ext}")
         
-        if ext in ['.jpg', '.jpeg', '.png']:
-            try:
-                print("--- Intentando Rekognition (Etiquetas)...")
-                response_rek = client_rek.detect_labels(
-                    Image={'S3Object': {'Bucket': bucket_name, 'Name': file_name}},
-                    MaxLabels=10,
-                    MinConfidence=75
-                )
-                
-                # ### NUEVO 2: Lógica de Traducción (Reemplaza la lista simple anterior) ###
-                tags_detectados = response_rek['Labels']
-                print(f"--- Rekognition encontró {len(tags_detectados)} etiquetas en inglés. Traduciendo...")
-
-                for label in tags_detectados:
-                    nombre_ingles = label['Name']
-                    try:
-                        # Llamamos a Amazon Translate
-                        resp_traduccion = client_trans.translate_text(
-                            Text=nombre_ingles,
-                            SourceLanguageCode='en',
-                            TargetLanguageCode='es'
-                        )
-                        mis_tags.append(resp_traduccion['TranslatedText'])
-                    except Exception as e_trans:
-                        # Si falla la traducción, guardamos el original en inglés para no perder el dato
-                        print(f"Error traduciendo '{nombre_ingles}': {e_trans}")
-                        mis_tags.append(nombre_ingles)
-                
-                print(f"--- Traducción finalizada: {mis_tags} ---")
-                # ### FIN NUEVO ###
-
-            except Exception as e_rek:
-                error_msg = f"Error Rekognition: {str(e_rek)}"
-                print(error_msg)
-                errores.append(error_msg)
-        else:
-            print(f"--- Saltando Rekognition: El formato {ext} no es compatible (Solo JPG/PNG) ---")
-
-        # --- PARTE 2: AWS TEXTRACT (OCR - Texto) ---
         try:
-            print("--- Intentando Textract (OCR)...")
-            response_text = client_text.detect_document_text(
-                Document={'S3Object': {'Bucket': bucket_name, 'Name': file_name}}
-            )
-            
-            lineas_texto = []
-            for item in response_text['Blocks']:
-                if item['BlockType'] == 'LINE':
-                    lineas_texto.append(item['Text'])
-            
-            texto_final = "\n".join(lineas_texto)
-            print(f"--- Textract Éxito: {len(lineas_texto)} líneas leídas ---")
+            # --- CASO 1: TEXTO PLANO (.txt) ---
+            if ext == 'txt':
+                # Descargamos directo a memoria y leemos
+                obj = client_s3.get_object(Bucket=bucket_name, Key=file_name)
+                texto_final = obj['Body'].read().decode('utf-8')
+                print(f"--> [IA] TXT leído exitosamente.")
 
-        except Exception as e_text:
-            error_msg = f"Error Textract: {str(e_text)}"
-            print(error_msg)
-            errores.append(error_msg)
+            # --- CASO 2: WORD (.docx) ---
+            elif ext == 'docx':
+                # El .docx es en realidad un ZIP con XMLs adentro. Lo abrimos nativamente.
+                obj = client_s3.get_object(Bucket=bucket_name, Key=file_name)
+                buffer = io.BytesIO(obj['Body'].read())
+                
+                with zipfile.ZipFile(buffer) as z:
+                    xml_content = z.read('word/document.xml')
+                    tree = ET.fromstring(xml_content)
+                    
+                    # Namespace oficial de Word
+                    namespaces = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+                    textos = []
+                    # Buscamos todas las etiquetas de texto <w:t>
+                    for node in tree.iterfind('.//w:t', namespaces):
+                        if node.text:
+                            textos.append(node.text)
+                    texto_final = "\n".join(textos)
+                print(f"--> [IA] DOCX procesado exitosamente.")
 
+            # --- CASO 3: IMÁGENES (JPG, PNG) -> TEXTRACT SÍNCRONO ---
+            elif ext in ['jpg', 'jpeg', 'png', 'tiff', 'tif']:
+                response = client_textract.detect_document_text(
+                    Document={'S3Object': {'Bucket': bucket_name, 'Name': file_name}}
+                )
+                lineas = [item['Text'] for item in response['Blocks'] if item['BlockType'] == 'LINE']
+                texto_final = "\n".join(lineas)
 
-        # --- GUARDADO FINAL ---
-        doc.tags_ia = mis_tags
-        doc.texto_detectado = texto_final
+            # --- CASO 4: PDF -> TEXTRACT ASÍNCRONO ---
+            elif ext == 'pdf':
+                start = client_textract.start_document_text_detection(
+                    DocumentLocation={'S3Object': {'Bucket': bucket_name, 'Name': file_name}}
+                )
+                job_id = start['JobId']
+                print(f"--> [IA] Job PDF iniciado: {job_id}")
+
+                while True:
+                    status = client_textract.get_document_text_detection(JobId=job_id)
+                    if status['JobStatus'] in ['SUCCEEDED', 'FAILED']:
+                        if status['JobStatus'] == 'SUCCEEDED':
+                            lineas = [item['Text'] for item in status['Blocks'] if item['BlockType'] == 'LINE']
+                            texto_final = "\n".join(lineas)
+                        break
+                    time.sleep(2)
+
+            else:
+                texto_final = "Formato no soportado para extracción automática."
+
+        except Exception as e:
+            print(f"Error extrayendo texto: {e}")
+            texto_final = f"Error de lectura: {str(e)}"
+
+        # ==============================================================================
+        # PASO B: ANÁLISIS VISUAL (Solo Imágenes)
+        # ==============================================================================
+        if ext in ['jpg', 'jpeg', 'png']:
+            try:
+                rek = client_rek.detect_labels(
+                    Image={'S3Object': {'Bucket': bucket_name, 'Name': file_name}},
+                    MaxLabels=5,
+                    MinConfidence=90
+                )
+                tags_finales = [l['Name'] for l in rek['Labels']]
+            except Exception as e:
+                print(f"Error Rekognition: {e}")
+
+        # ==============================================================================
+        # PASO C: GUARDAR
+        # ==============================================================================
         
-        if errores:
-            # Si hubo errores parciales, guardamos el log pero marcamos completado si algo funcionó
-            doc.estado = 'completado_con_alertas' if (mis_tags or texto_final) else 'error'
-            print(f"--- Errores detectados: {errores}")
-        else:
-            doc.estado = 'completado'
-            
+        # Generar vector simulado para la demo
+        if MODO_LABORATORIO_BEDROCK:
+            embedding_final = [random.uniform(-1.0, 1.0) for _ in range(1536)]
+
+        doc.tags_ia = tags_finales
+        doc.texto_detectado = texto_final
+        doc.embedding = embedding_final
+        doc.estado = 'completado'
         doc.save()
 
-        return f"Proceso finalizado. Tags: {len(mis_tags)} | Texto: {len(texto_final)} chars"
+        print(f"--- [CELERY] Tarea FINALIZADA OK ---")
+        return "OK"
 
-    except Documento.DoesNotExist:
-        return f"Error: Documento {documento_id} no encontrado."
-    
     except Exception as e:
-        print(f"ERROR CRITICO GENERAL: {e}")
-        try:
-            doc.estado = 'error'
-            doc.save()
-        except:
-            pass
-        return f"Error critico: {e}"
+        print(f"ERROR CRITICO: {e}")
+        return "Error"
+
+    # --- NOTIFICACIÓN WEBSOCKET (NUEVO) ---
+        channel_layer = get_channel_layer()
+        
+        # Enviamos el mensaje al grupo del usuario dueño del documento
+        async_to_sync(channel_layer.group_send)(
+            f"user_{doc.usuario.id}",  # Nombre del grupo (mismo que en consumers.py)
+            {
+                "type": "doc.status",  # Esto busca el método 'doc_status' en el consumer
+                "data": {
+                    "doc_id": doc.id,
+                    "tags": doc.tags_ia,
+                    "texto_preview": doc.texto_detectado[:100] if doc.texto_detectado else "..."
+                }
+            }
+        )
+        return f"Documento {doc_id} procesado y notificado."

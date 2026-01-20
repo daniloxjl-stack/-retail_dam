@@ -40,3 +40,4 @@ staticfiles/
 Dockerfile
 docker-compose.yml
 .dockerignore
+.env

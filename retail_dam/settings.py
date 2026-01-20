@@ -20,7 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-c5lryz4!&lew)13v+p5!64_+5x#op5xm6#s4794o!c4k#xxz3y'
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -31,6 +31,7 @@ ALLOWED_HOSTS = ['*']
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -38,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'storages',
+    'channels',
     'gestion',
 ]
 
@@ -79,9 +81,9 @@ WSGI_APPLICATION = 'retail_dam.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'retail_db'),
-        'USER': os.environ.get('DB_USER', 'danilo'),
-	'PASSWORD': os.environ.get('DB_PASS', 'jaming21'),
+        'NAME': os.environ.get('DB_NAME'),
+        'USER': os.environ.get('DB_USER'),
+	'PASSWORD': os.environ.get('DB_PASS'),
 	'HOST': os.environ.get('DB_HOST', 'db'),
 	'PORT': '5432',
 	
@@ -132,13 +134,27 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # usamos Boto3 para que las credenciales del rol iam de la ec2 automaticamente
 
 AWS_STORAGE_BUCKET_NAME = 'perfumeria-lab-2025'
-AWS_S3_REGIONAL_NAME = 'us-east-1'
+AWS_S3_REGION_NAME = 'us-east-1'
 
-AWS_ACCESS_KEY_ID = None
-AWS_SECRET_ACCESS_KEY = None
 
+# 1. Esto evita que Django intente cambiar los permisos ACL (S3 moderno lo bloquea)
+AWS_DEFAULT_ACL = None 
+
+
+
+#Configuración híbrida: Usa env vars si existen, sino confía en el Rol IAM (EC2)
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID', None)
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY', None)
+AWS_SESSION_TOKEN = os.getenv('AWS_SESSION_TOKEN', None)
+    
 # configuracion de archivos privados vs publicos
+AWS_QUERYSTRING_AUTH = True
 AWS_S3_SIGNATURE_VERSION = 's3v4'
+
+
+#  Fuerza el uso de URLs tipo "bucket.s3.amazonaws.com" (más compatible con firma v4)
+AWS_S3_ADDRESSING_STYLE = "virtual"
+
 
 # esto le dice a django: usa s3 para todo lo que suban los usuarios
 DEFAULT_FILE_STORAGE ='storages.backends.s3boto3.S3Boto3Storage'
@@ -164,4 +180,32 @@ LOGOUT_REDIRECT_URL ='login'
 #  -- CONFIGURACION CELERY ---
 CELERY_BROKER_URL = 'redis://redis:6379/0'
 CELERY_RESULT_BACKEND = 'redis://redis:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'America/Santiago'
 
+
+# --- SEGURIDAD CSRF PARA AWS ---
+# Esto permite que el Logout funcione desde tu IP pública
+CSRF_TRUSTED_ORIGINS = [
+    "http://54.172.95.236",       # Tu IP sin puerto
+    "http://54.172.95.236:8000",  # Tu IP con puerto
+    "http://18.212.98.166",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+
+
+# Configuración ASGI para WebSockets
+ASGI_APPLICATION = 'retail_dam.asgi.application'  # Asegúrate que 'retail_dam' es el nombre de tu carpeta de proyecto
+
+# Configuración del Canal (Usando tu Redis existente)
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("redis", 6379)], # Tu Redis local
+        },
+    },
+}

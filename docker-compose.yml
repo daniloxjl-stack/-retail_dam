@@ -1,7 +1,8 @@
 services:
   # 1. Base de Datos (PostgreSQL) - ¡LA SOLUCIÓN!
   db:
-    image: postgres:15-alpine
+   # image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     environment:
       - POSTGRES_DB=retail_db
       - POSTGRES_USER=danilo
@@ -33,6 +34,7 @@ services:
       - DB_NAME=retail_db
       - DB_USER=danilo
       - DB_PASS=jaming21
+      
 
   # 4. Celery Worker
   celery:
